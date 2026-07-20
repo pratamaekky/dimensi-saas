@@ -56,6 +56,7 @@
                   "  pm.expect(json.success).to.be.true;",
                   "  pm.expect(json.data.accessToken).to.be.a('string');",
                   "  pm.environment.set('adminToken', json.data.accessToken);",
+                  "  pm.environment.set('refreshToken', json.data.refreshToken);",
                   "});"
                 ]
               }
@@ -85,10 +86,72 @@
                   "  pm.response.to.have.status(201);",
                   "  const json = pm.response.json();",
                   "  pm.environment.set('adminToken', json.data.accessToken);",
+                  "  pm.environment.set('refreshToken', json.data.refreshToken);",
                   "});"
                 ]
               }
             }
+          ]
+        },
+        {
+          "name": "Refresh Access Token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "auth": { "type": "noauth" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/refresh", "host": ["{{baseUrl}}"], "path": ["auth", "refresh"] },
+            "description": "No access token needed — the refresh token itself is the credential (looked up via prisma.base, same as login). Rotates: the refresh token used here is revoked server-side and a brand new one is returned, so the old value can't be replayed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 with new accessToken + rotated refreshToken', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data.accessToken).to.be.a('string');",
+                  "  pm.expect(json.data.refreshToken).to.be.a('string');",
+                  "  pm.environment.set('adminToken', json.data.accessToken);",
+                  "  pm.environment.set('refreshToken', json.data.refreshToken);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/auth/logout", "host": ["{{baseUrl}}"], "path": ["auth", "logout"] },
+            "description": "Requires a valid access token (uses collection-level adminToken). Revokes every active refresh token for this user. The access token itself stays valid until it naturally expires (JWT_EXPIRES, 15m default) — stateless JWTs can't be blacklisted here, only the refresh token is actually revoked. See README §4 for why."
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('201 OK', function () { pm.response.to.have.status(201); });"] } }
+          ]
+        },
+        {
+          "name": "Refresh After Logout → 401",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "auth": { "type": "noauth" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/refresh", "host": ["{{baseUrl}}"], "path": ["auth", "refresh"] },
+            "description": "The refreshToken captured after 'Refresh Access Token' was just revoked by Logout — reusing it must fail."
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('401 Unauthorized', function () { pm.response.to.have.status(401); });"] } }
           ]
         }
       ]
@@ -633,6 +696,23 @@
             "auth": { "type": "noauth" },
             "body": { "mode": "raw", "raw": "{}" },
             "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] }
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('400 Bad Request', function () { pm.response.to.have.status(400); });"] } }
+          ]
+        },
+        {
+          "name": "Register with weak password → 400",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "auth": { "type": "noauth" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyName\": \"Weak Password Co\",\n  \"name\": \"Someone\",\n  \"email\": \"weak-{{$timestamp}}@test.com\",\n  \"password\": \"alllowercase\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] },
+            "description": "Password policy: min 8 chars, needs uppercase, lowercase, and a special character. 'alllowercase' has none of the last two → rejected."
           },
           "event": [
             { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('400 Bad Request', function () { pm.response.to.have.status(400); });"] } }

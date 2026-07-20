@@ -42,14 +42,33 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  company       Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  assignedTasks Task[]     @relation("TaskAssignee")
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignedTasks Task[]         @relation("TaskAssignee")
   auditLogs     AuditLog[]
+  refreshTokens RefreshToken[]
 
   // Email unik PER company, bukan global — lihat §8.1 (keputusan diragukan)
   @@unique([companyId, email])
   @@index([companyId])
   @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  // Hash (bukan token mentah) — token mentah cuma sekali dikirim ke client saat
+  // diterbitkan, tidak pernah disimpan. Lookup lewat tokenHash di prisma.base,
+  // sama seperti login: belum ada tenant context saat refresh/logout dipanggil.
+  tokenHash String    @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("refresh_tokens")
 }
 
 model Project {

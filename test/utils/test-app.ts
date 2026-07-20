@@ -23,7 +23,7 @@ export async function registerCompany(
     companyName: overrides.companyName ?? `Test Co ${suffix}`,
     name: overrides.name ?? 'Admin',
     email: overrides.email ?? `admin-${suffix}@test.com`,
-    password: overrides.password ?? 'password123',
+    password: overrides.password ?? 'Password123!',
   };
   const res = await request(app.getHttpServer()).post('/api/v1/auth/register').send(body);
   return { token: res.body.data.accessToken as string, ...body };
@@ -32,7 +32,7 @@ export async function registerCompany(
 export async function createMember(app: INestApplication, adminToken: string) {
   const suffix = Math.random().toString(36).slice(2, 8);
   const email = `member-${suffix}@test.com`;
-  const password = 'password123';
+  const password = 'Password123!';
   await request(app.getHttpServer())
     .post('/api/v1/users')
     .set('authorization', `Bearer ${adminToken}`)

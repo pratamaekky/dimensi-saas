@@ -34,7 +34,8 @@ jobs:
       REDIS_HOST: localhost
       REDIS_PORT: 6379
       JWT_SECRET: ci-test-secret
-      JWT_EXPIRES: 1d
+      JWT_EXPIRES: 15m
+      REFRESH_TOKEN_TTL_DAYS: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

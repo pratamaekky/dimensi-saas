@@ -1,4 +1,5 @@
-import { IsEmail, IsNotEmpty, MinLength } from 'class-validator';
+import { IsEmail, IsNotEmpty, Matches } from 'class-validator';
+import { STRONG_PASSWORD_MESSAGE, STRONG_PASSWORD_REGEX } from '../../common/validators/password';
 
 export class RegisterDto {
   @IsNotEmpty()
@@ -10,6 +11,6 @@ export class RegisterDto {
   @IsEmail()
   email: string;
 
-  @MinLength(8)
+  @Matches(STRONG_PASSWORD_REGEX, { message: STRONG_PASSWORD_MESSAGE })
   password: string;
 }

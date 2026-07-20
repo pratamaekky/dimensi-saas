@@ -4,7 +4,7 @@ Backend mini Project Management (versi kecil Asana/Trello) untuk SaaS multi-tena
 sesuai [`docs/TECH_SPEC-pm-saas.md`](docs/TECH_SPEC-pm-saas.md). Entitas: `Company` (tenant) →
 banyak `User`, banyak `Project`, setiap `Project` → banyak `Task`.
 
-Stack: NestJS + TypeScript, Prisma + PostgreSQL, BullMQ + Redis, JWT (access token saja).
+Stack: NestJS + TypeScript, Prisma + PostgreSQL, BullMQ + Redis, JWT (access + refresh token).
 
 **Kenapa stack ini:** NestJS dipilih karena guard/middleware/interceptor-nya memberi tempat
 natural untuk penegakan tenant scoping berlapis (lihat §2), dan struktur modul-nya memaksa
@@ -48,7 +48,8 @@ npx ts-node prisma/seed.ts
 # 5. Jalankan server (default port dari .env, fallback 3000)
 npm run start:dev
 
-# 6. Jalankan test e2e (tenant isolation, RBAC, validasi input, race condition)
+# 6. Jalankan test e2e (tenant isolation, RBAC, validasi input, race condition,
+#    pagination, refresh token/logout, password policy)
 npm run test:e2e
 ```
 
@@ -65,8 +66,10 @@ Semua endpoint di-prefix `/api/v1`. Response envelope seragam:
 { "success": false, "error": { "code": "NOT_FOUND", "message": "..." } }
 ```
 
-Alur dasar: `POST /auth/register` (buat Company + Admin, dapat JWT langsung) → pakai token itu
-sebagai `Authorization: Bearer <token>` untuk semua endpoint lain.
+Alur dasar: `POST /auth/register` (buat Company + Admin, dapat `{ accessToken, refreshToken }`
+langsung) → pakai `accessToken` sebagai `Authorization: Bearer <token>` untuk semua endpoint lain.
+Kalau `accessToken` sudah expired (`JWT_EXPIRES`, default 15 menit), tukar `refreshToken` lewat
+`POST /auth/refresh` untuk dapat pasangan baru — lihat §3.2.
 
 ---
 
@@ -130,15 +133,19 @@ Member mencoba hapus project).
 
 ## 3. Yang Sengaja Di-skip
 
-- Refresh token / logout — hanya access token.
 - Filtering (by `status`/`assigneeId`) pada endpoint list — **pagination sudah diimplementasi**,
   lihat §3.1.
-- Rate limiting, password policy lebih ketat.
+- Rate limiting.
 - Soft delete (saat ini hard delete + cascade dari FK `onDelete: Cascade`).
 - Audit trail: delta sederhana (field yang diubah), bukan before/after penuh.
+- Pruning refresh token yang sudah expired/revoked — tabelnya akan terus bertumbuh tanpa job
+  pembersih (lihat §3.2).
 
 **Rencana kalau ada waktu lebih:** filtering (`status`/`assigneeId`) pada endpoint list, lalu
-refresh token + logout, baru rate limiting.
+rate limiting, baru cron pembersih refresh token kedaluwarsa.
+
+(Item "refresh token/logout" dan "password policy lebih ketat" yang tadinya ada di daftar ini
+sudah diimplementasi — lihat §3.2.)
 
 ### 3.1 Pagination (sudah dikerjakan)
 
@@ -158,6 +165,40 @@ DTO lain). Response envelope untuk kedua endpoint ini jadi:
 
 `total` dihitung via `count()` terpisah yang tetap kena scoping tenant yang sama (Prisma
 extension), jadi jumlahnya juga otomatis per-company, bukan global.
+
+### 3.2 Refresh token, logout, dan password policy (sudah dikerjakan)
+
+**Refresh token.** `POST /auth/register` dan `POST /auth/login` sekarang mengembalikan
+`{ accessToken, refreshToken }`, bukan cuma `accessToken`. `accessToken` (JWT) diperpendek jadi
+`JWT_EXPIRES=15m` (dulu default `1d`) — access token pendek + refresh token panjang adalah alasan
+utama pola ini berguna; kalau access token tetap berumur 1 hari, refresh token nyaris tak
+menambah apa-apa.
+
+- `refreshToken` **bukan JWT**, melainkan 40-byte random string. Hanya *hash*-nya (`sha256`) yang
+  disimpan di tabel `refresh_tokens` — kalau DB bocor, tidak ada token siap-pakai yang ikut bocor
+  (mirip alasan password di-hash, bukan disimpan plaintext).
+- `POST /auth/refresh` (`{ refreshToken }`, publik) — cari `tokenHash` via `prisma.base` (belum
+  ada tenant context di titik ini, sama seperti login), validasi belum revoked & belum expired,
+  **rotate**: token lama langsung di-revoke, pasangan access+refresh baru diterbitkan. Rotasi ini
+  mencegah refresh token lama dipakai ulang (replay) kalau ia sempat bocor lalu dipakai sekali oleh
+  penyerang — pemilik asli akan otomatis nge-fail di percobaan refresh berikutnya, tanda ada yang
+  janggal. Token tidak valid/kedaluwarsa/sudah di-revoke → 401.
+- `POST /auth/logout` (butuh access token valid) — revoke **semua** refresh token aktif milik user
+  (logout di semua device/sesi sekaligus; tidak ada per-device session tracking — simplifikasi
+  yang disengaja, cukup untuk scope ini).
+- **Keterbatasan yang melekat pada JWT stateless**: `accessToken` yang sudah beredar di tangan
+  client **tetap valid** sampai kedaluwarsa alami, walau sudah logout — tidak ada blacklist.
+  Makanya `JWT_EXPIRES` diperpendek jadi 15 menit: window "masih valid walau sudah logout" dibatasi
+  ke maksimal 15 menit, bukan 1 hari.
+- Tidak ada job pembersih baris `refresh_tokens` yang sudah expired/revoked — tabelnya bertumbuh
+  terus (lihat §3, "sengaja di-skip").
+
+**Password policy.** `password` pada `POST /auth/register` dan `POST /users` sekarang wajib:
+minimal 8 karakter, mengandung huruf besar, huruf kecil, dan karakter spesial (`class-validator`
+`@Matches`, regex di [`src/common/validators/password.ts`](src/common/validators/password.ts)).
+Password yang tidak memenuhi → 400. `login` tetap hanya mengecek presence (tidak retroaktif
+memvalidasi ulang password lama), dan `prisma/seed.ts` membuat hash langsung lewat Prisma (bypass
+DTO), jadi kredensial seed di §1 tidak terpengaruh aturan baru ini.
 
 ---
 
@@ -209,6 +250,8 @@ src/
     decorators/       # @Roles, @Public
     interceptors/      # response envelope
     filters/           # exception -> error envelope
+    pagination/        # PaginationQueryDto, paginate() helper
+    validators/        # STRONG_PASSWORD_REGEX
   audit/              # audit trail service
   jobs/               # BullMQ queue + notification worker
   prisma/             # prisma.service.ts (base + scoped client)
@@ -236,3 +279,7 @@ diuji justru jaminan isolasi datanya sendiri):
    satu 200, satu 409.
 5. **Pagination** — `page`/`limit` menghasilkan `items`/`meta` yang benar, default page 1/limit
    20 dipakai kalau query param diomit, `limit` di luar rentang → 400.
+6. **Refresh token, logout, password policy** — register/login mengembalikan pasangan
+   access+refresh; refresh me-rotate token (token lama tidak bisa dipakai ulang → 401); logout
+   me-revoke refresh token lalu percobaan refresh berikutnya 401; logout tanpa access token → 401;
+   password lemah (tanpa huruf besar/karakter spesial) ditolak di register maupun `POST /users`.
