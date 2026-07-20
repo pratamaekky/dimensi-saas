@@ -131,14 +131,33 @@ Member mencoba hapus project).
 ## 3. Yang Sengaja Di-skip
 
 - Refresh token / logout — hanya access token.
-- Pagination/filtering pada endpoint list.
+- Filtering (by `status`/`assigneeId`) pada endpoint list — **pagination sudah diimplementasi**,
+  lihat §3.1.
 - Rate limiting, password policy lebih ketat.
 - Soft delete (saat ini hard delete + cascade dari FK `onDelete: Cascade`).
 - Audit trail: delta sederhana (field yang diubah), bukan before/after penuh.
 
-**Rencana kalau ada waktu lebih:** pagination pada `GET /projects` dan `GET /tasks` (paling
-berdampak — daftar bisa membesar tanpa batas saat ini), lalu refresh token + logout, baru rate
-limiting.
+**Rencana kalau ada waktu lebih:** filtering (`status`/`assigneeId`) pada endpoint list, lalu
+refresh token + logout, baru rate limiting.
+
+### 3.1 Pagination (sudah dikerjakan)
+
+`GET /projects` dan `GET /projects/:projectId/tasks` menerima query param `page` (default 1) dan
+`limit` (default 20, maks 100). `limit` di luar rentang → 400 (whitelist validation, sama seperti
+DTO lain). Response envelope untuk kedua endpoint ini jadi:
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "items": [ /* ... */ ],
+    "meta": { "total": 42, "page": 1, "limit": 20, "totalPages": 3 }
+  }
+}
+```
+
+`total` dihitung via `count()` terpisah yang tetap kena scoping tenant yang sama (Prisma
+extension), jadi jumlahnya juga otomatis per-company, bukan global.
 
 ---
 
@@ -215,3 +234,5 @@ diuji justru jaminan isolasi datanya sendiri):
    ditolak whitelist validation → 400.
 4. **Race condition (bonus)** — dua update konkuren pada task yang sama dengan `version` sama →
    satu 200, satu 409.
+5. **Pagination** — `page`/`limit` menghasilkan `items`/`meta` yang benar, default page 1/limit
+   20 dipakai kalau query param diomit, `limit` di luar rentang → 400.

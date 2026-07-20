@@ -3,6 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { assertOwned } from '../common/tenant/assert-owned';
 import { getTenantStore } from '../common/tenant/tenant-context';
+import { PaginationQueryDto } from '../common/pagination/pagination-query.dto';
+import { paginate } from '../common/pagination/paginate';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 
@@ -21,11 +23,17 @@ export class ProjectsService {
     return project;
   }
 
-  findAll() {
-    return this.prisma.scoped.project.findMany({
-      include: { _count: { select: { tasks: true } } },
-      orderBy: { createdAt: 'desc' },
-    });
+  async findAll({ page, limit }: PaginationQueryDto) {
+    const [items, total] = await Promise.all([
+      this.prisma.scoped.project.findMany({
+        include: { _count: { select: { tasks: true } } },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.scoped.project.count(),
+    ]);
+    return paginate(items, total, page, limit);
   }
 
   async findOne(id: string) {

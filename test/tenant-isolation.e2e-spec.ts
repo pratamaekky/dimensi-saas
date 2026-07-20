@@ -54,8 +54,8 @@ describe('Tenant isolation (spec §11 Test 1)', () => {
       .set('authorization', `Bearer ${companyA.token}`);
 
     expect(list.status).toBe(200);
-    expect(list.body.data.some((p: { name: string }) => p.name === 'Globex Only Project')).toBe(
-      false,
-    );
+    expect(
+      list.body.data.items.some((p: { name: string }) => p.name === 'Globex Only Project'),
+    ).toBe(false);
   });
 });

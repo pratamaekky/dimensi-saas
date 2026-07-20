@@ -6,9 +6,11 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { Roles } from '../common/decorators/roles.decorator';
+import { PaginationQueryDto } from '../common/pagination/pagination-query.dto';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
@@ -24,8 +26,8 @@ export class ProjectsController {
   }
 
   @Get()
-  findAll() {
-    return this.projects.findAll();
+  findAll(@Query() pagination: PaginationQueryDto) {
+    return this.projects.findAll(pagination);
   }
 
   @Get(':id')

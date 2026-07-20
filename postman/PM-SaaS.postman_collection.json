@@ -206,11 +206,32 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{baseUrl}}/projects", "host": ["{{baseUrl}}"], "path": ["projects"] },
-            "description": "Any authenticated role. Auto-scoped to the caller's company; includes task _count."
+            "url": {
+              "raw": "{{baseUrl}}/projects?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["projects"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" }
+              ]
+            },
+            "description": "Any authenticated role. Auto-scoped to the caller's company; includes task _count. Paginated: response `data` is `{ items, meta: { total, page, limit, totalPages } }`. `page` defaults to 1, `limit` to 20 (max 100) if omitted."
           },
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', function () { pm.response.to.have.status(200); });"] } }
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK with pagination meta', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data.items).to.be.an('array');",
+                  "  pm.expect(json.data.meta).to.include.all.keys('total', 'page', 'limit', 'totalPages');",
+                  "});"
+                ]
+              }
+            }
           ]
         },
         {
@@ -312,14 +333,31 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/projects/{{projectId}}/tasks",
+              "raw": "{{baseUrl}}/projects/{{projectId}}/tasks?page=1&limit=10",
               "host": ["{{baseUrl}}"],
-              "path": ["projects", "{{projectId}}", "tasks"]
+              "path": ["projects", "{{projectId}}", "tasks"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" }
+              ]
             },
-            "description": "Any authenticated role. Includes assignee (id, name, email)."
+            "description": "Any authenticated role. Includes assignee (id, name, email). Paginated, same shape as List Projects: `data.items` + `data.meta`."
           },
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', function () { pm.response.to.have.status(200); });"] } }
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK with pagination meta', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data.items).to.be.an('array');",
+                  "  pm.expect(json.data.meta).to.include.all.keys('total', 'page', 'limit', 'totalPages');",
+                  "});"
+                ]
+              }
+            }
           ]
         },
         {
@@ -574,7 +612,7 @@
                 "exec": [
                   "pm.test('200 OK and Globex project is absent', function () {",
                   "  pm.response.to.have.status(200);",
-                  "  const names = pm.response.json().data.map(p => p.name);",
+                  "  const names = pm.response.json().data.items.map(p => p.name);",
                   "  pm.expect(names).to.not.include('Globex Secret Project');",
                   "});"
                 ]
