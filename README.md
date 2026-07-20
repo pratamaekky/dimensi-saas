@@ -42,6 +42,12 @@ npm run start:dev
 npm run test:e2e
 ```
 
+Ada juga Postman collection siap-pakai di [`postman/`](postman/) — import
+`PM-SaaS.postman_collection.json` + `PM-SaaS.postman_environment.json`, pilih environment "PM
+SaaS - Local", lalu jalankan folder-nya berurutan (01→08). Setiap request meng-capture
+token/id yang dibutuhkan request berikutnya secara otomatis lewat Tests script; ada folder demo
+khusus untuk RBAC (403) dan tenant isolation (404).
+
 Semua endpoint di-prefix `/api/v1`. Response envelope seragam:
 
 ```jsonc
