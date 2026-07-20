@@ -135,17 +135,16 @@ Member mencoba hapus project).
 
 - Filtering (by `status`/`assigneeId`) pada endpoint list — **pagination sudah diimplementasi**,
   lihat §3.1.
-- Rate limiting.
 - Soft delete (saat ini hard delete + cascade dari FK `onDelete: Cascade`).
 - Audit trail: delta sederhana (field yang diubah), bukan before/after penuh.
 - Pruning refresh token yang sudah expired/revoked — tabelnya akan terus bertumbuh tanpa job
   pembersih (lihat §3.2).
 
 **Rencana kalau ada waktu lebih:** filtering (`status`/`assigneeId`) pada endpoint list, lalu
-rate limiting, baru cron pembersih refresh token kedaluwarsa.
+soft delete, baru cron pembersih refresh token kedaluwarsa.
 
-(Item "refresh token/logout" dan "password policy lebih ketat" yang tadinya ada di daftar ini
-sudah diimplementasi — lihat §3.2.)
+(Item "refresh token/logout", "password policy lebih ketat", dan "rate limiting" yang tadinya ada
+di daftar ini sudah diimplementasi — lihat §3.2 dan §3.3.)
 
 ### 3.1 Pagination (sudah dikerjakan)
 
@@ -199,6 +198,26 @@ minimal 8 karakter, mengandung huruf besar, huruf kecil, dan karakter spesial (`
 Password yang tidak memenuhi → 400. `login` tetap hanya mengecek presence (tidak retroaktif
 memvalidasi ulang password lama), dan `prisma/seed.ts` membuat hash langsung lewat Prisma (bypass
 DTO), jadi kredensial seed di §1 tidak terpengaruh aturan baru ini.
+
+### 3.3 Rate limiting (sudah dikerjakan)
+
+Pakai `@nestjs/throttler` (bukan reimplementasi manual) — dua tingkat:
+
+- **Global default** (semua route, semua controller): `THROTTLE_LIMIT` request per
+  `THROTTLE_TTL_SECONDS` detik, per **route** per **IP** (default 60 req/60s). "Per route" artinya
+  ngebom `GET /projects` tidak ikut memotong kuota `POST /projects` — masing-masing endpoint punya
+  bucket sendiri, jadi satu klien yang wajar-wajar saja memakai banyak endpoint berbeda tidak
+  saling mengganggu.
+- **Endpoint auth** (`/auth/register`, `/auth/login`, `/auth/refresh`) — override lebih ketat
+  lewat `@Throttle()` di [`AuthController`](src/auth/auth.controller.ts): 10 request/60 detik.
+  Ini target klasik brute-force/credential-stuffing, jadi sengaja dibuat jauh lebih ketat daripada
+  endpoint bisnis biasa. `/auth/logout` **tidak** di-throttle lebih ketat (butuh access token
+  valid dulu, jadi risikonya berbeda dari endpoint publik di atas).
+- Kelebihan limit → **429**, envelope `{ "success": false, "error": { "code": "RATE_LIMITED", ... } }`.
+- **Skip:** tidak ada penanganan khusus untuk klien di belakang reverse-proxy/load-balancer
+  (butuh `app.set('trust proxy', ...)` + baca `X-Forwarded-For` yang benar, tergantung
+  infrastruktur deploy) — default Express `req.ip` dipakai apa adanya, cukup untuk single-instance
+  deployment scope ini.
 
 ---
 
@@ -283,3 +302,5 @@ diuji justru jaminan isolasi datanya sendiri):
    access+refresh; refresh me-rotate token (token lama tidak bisa dipakai ulang → 401); logout
    me-revoke refresh token lalu percobaan refresh berikutnya 401; logout tanpa access token → 401;
    password lemah (tanpa huruf besar/karakter spesial) ditolak di register maupun `POST /users`.
+7. **Rate limiting** — request ke-11 ke `/auth/login` dalam satu window → 429 `RATE_LIMITED`;
+   segelintir request wajar ke endpoint bisnis (`GET /projects`) tidak ikut kena limit ketat itu.

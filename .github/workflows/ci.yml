@@ -36,6 +36,8 @@ jobs:
       JWT_SECRET: ci-test-secret
       JWT_EXPIRES: 15m
       REFRESH_TOKEN_TTL_DAYS: 30
+      THROTTLE_TTL_SECONDS: 60
+      THROTTLE_LIMIT: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
