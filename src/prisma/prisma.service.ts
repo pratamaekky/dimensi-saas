@@ -5,7 +5,7 @@ import { tenantExtension } from '../common/tenant/prisma-tenant.extension';
 @Injectable()
 export class PrismaService implements OnModuleInit, OnModuleDestroy {
   readonly base: PrismaClient;
-  readonly scoped: ReturnType<PrismaClient['$extends']>;
+  readonly scoped;
 
   constructor() {
     this.base = new PrismaClient();
