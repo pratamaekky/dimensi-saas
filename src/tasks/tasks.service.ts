@@ -4,6 +4,7 @@ import { Role } from '@prisma/client';
 import { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from '../projects/projects.service';
+import { AuditService } from '../audit/audit.service';
 import { assertOwned } from '../common/tenant/assert-owned';
 import { getTenantStore } from '../common/tenant/tenant-context';
 import { NotificationJobData } from '../jobs/notifications.processor';
@@ -15,6 +16,7 @@ export class TasksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly projects: ProjectsService,
+    private readonly audit: AuditService,
     @InjectQueue('notifications') private readonly notifications: Queue<NotificationJobData>,
   ) {}
 
@@ -24,6 +26,7 @@ export class TasksService {
     const task = await this.prisma.scoped.task.create({
       data: { projectId, title: dto.title, assigneeId: dto.assigneeId } as any,
     });
+    await this.audit.record({ action: 'task.create', entity: 'Task', entityId: task.id, changes: dto });
     if (task.assigneeId) {
       await this.notifications.add('task-assigned', {
         companyId,
@@ -70,6 +73,7 @@ export class TasksService {
     if (count === 0) {
       throw new ConflictException('Task was modified by another process');
     }
+    await this.audit.record({ action: 'task.update', entity: 'Task', entityId: id, changes: rest });
 
     const updated = await this.findOne(projectId, id);
     if (dto.assigneeId && dto.assigneeId !== task.assigneeId) {
@@ -88,5 +92,6 @@ export class TasksService {
     await this.findOne(projectId, id);
     const { count } = await this.prisma.scoped.task.deleteMany({ where: { id, projectId } });
     if (count === 0) throw new NotFoundException();
+    await this.audit.record({ action: 'task.delete', entity: 'Task', entityId: id });
   }
 }

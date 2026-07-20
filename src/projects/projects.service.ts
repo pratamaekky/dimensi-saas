@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { assertOwned } from '../common/tenant/assert-owned';
 import { getTenantStore } from '../common/tenant/tenant-context';
 import { CreateProjectDto } from './dto/create-project.dto';
@@ -7,12 +8,17 @@ import { UpdateProjectDto } from './dto/update-project.dto';
 
 @Injectable()
 export class ProjectsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
-  create(dto: CreateProjectDto) {
+  async create(dto: CreateProjectDto) {
     // `data` statically requires `companyId`/`company`, which the tenant extension injects
     // at runtime and Prisma's generated types can't see — see prisma-tenant.extension.ts.
-    return this.prisma.scoped.project.create({ data: dto as any });
+    const project = await this.prisma.scoped.project.create({ data: dto as any });
+    await this.audit.record({ action: 'project.create', entity: 'Project', entityId: project.id, changes: dto });
+    return project;
   }
 
   findAll() {
@@ -32,6 +38,7 @@ export class ProjectsService {
     await this.findOne(id); // 404 if missing/cross-tenant, via Layer 2 assert
     const { count } = await this.prisma.scoped.project.updateMany({ where: { id }, data: dto });
     if (count === 0) throw new NotFoundException();
+    await this.audit.record({ action: 'project.update', entity: 'Project', entityId: id, changes: dto });
     return this.findOne(id);
   }
 
@@ -39,5 +46,6 @@ export class ProjectsService {
     await this.findOne(id);
     const { count } = await this.prisma.scoped.project.deleteMany({ where: { id } });
     if (count === 0) throw new NotFoundException();
+    await this.audit.record({ action: 'project.delete', entity: 'Project', entityId: id });
   }
 }
