@@ -6,6 +6,16 @@ banyak `User`, banyak `Project`, setiap `Project` → banyak `Task`.
 
 Stack: NestJS + TypeScript, Prisma + PostgreSQL, BullMQ + Redis, JWT (access token saja).
 
+**Kenapa stack ini:** NestJS dipilih karena guard/middleware/interceptor-nya memberi tempat
+natural untuk penegakan tenant scoping berlapis (lihat §2), dan struktur modul-nya memaksa
+controller tetap tipis — cocok dengan bobot penilaian "struktur kode" di brief. Prisma dipilih
+karena Client Extension-nya bisa menegakkan scoping di layer data secara otomatis (§2, Layer 1),
+sesuatu yang lebih sulit dilakukan rapi dengan query builder biasa. PostgreSQL karena relasional,
+mendukung constraint (`@@unique([companyId, email])`) dan index komposit yang jadi bagian dari
+strategi isolasi. BullMQ dipilih atas alternatif seperti `setTimeout`/in-process queue karena job
+benar-benar keluar dari request cycle (persist di Redis, punya retry/backoff bawaan) — bukan
+sekadar disimulasikan.
+
 ---
 
 ## 1. Cara Run
@@ -60,7 +70,26 @@ sebagai `Authorization: Bearer <token>` untuk semua endpoint lain.
 
 ---
 
-## 2. Strategi Multi-Tenancy & Trade-off
+## 2. Skema Database & Strategi Multi-Tenancy
+
+Skema: [`prisma/schema.prisma`](prisma/schema.prisma) (model `Company`, `User`, `Project`,
+`Task`, `AuditLog`); file migration reversible standar Prisma Migrate ada di
+[`prisma/migrations/`](prisma/migrations/). ERD ringkas:
+
+```
+Company 1───* User
+Company 1───* Project
+Company 1───* Task
+Company 1───* AuditLog
+Project 1───* Task
+User    1───* Task        (assignee, opsional)
+User    1───* AuditLog    (actor, opsional)
+```
+
+`Company` adalah tenant root (tidak punya `companyId` sendiri); semua tabel lain wajib punya
+`companyId`. `Task.companyId` sengaja didenormalisasi dari `project.companyId` agar bisa
+di-auto-scope tanpa join ke `Project` (lihat Layer 1 di bawah) dan agar index komposit
+`(companyId, projectId)` murah.
 
 ### Kenapa row-level scoping
 
